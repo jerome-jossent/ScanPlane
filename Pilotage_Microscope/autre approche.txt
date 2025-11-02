@@ -1,0 +1,631 @@
+#pragma region VARIABLES HARDWARE Pins
+int PUL_X = 13;
+int DIR_X = 12;
+int ENA_X = 11;
+
+int ENA_Y = 10;
+int DIR_Y = 9;
+int PUL_Y = 8;
+
+int ENA_Z = 7;
+int DIR_Z = 6;
+int PUL_Z = 5;
+#pragma endregion
+
+bool origine_initialized = false;
+float x = 0;
+float y = 0;
+float x_max = -1;
+float y_max = -1;
+
+long delaisPasX_microsec = 100;
+long delaisPasY_microsec = 10;
+long delaisPasZ_microsec = 200;
+
+float conversion_X_imp_to_mm = -160.0f;
+float conversion_Y_imp_to_mm = 3160.0f;
+float conversion_Z_imp_to_turn = -6400.0f;
+
+bool debug = true;
+
+#pragma region VARIABLES Serial exchange
+const unsigned int MAX_MESSAGE_LENGTH = 40;
+static char message[MAX_MESSAGE_LENGTH];
+#pragma endregion
+
+#pragma region VARIABLES Machine à états moteur
+enum MotorState {
+  MOTOR_IDLE,
+  MOTOR_MOVING_X,
+  MOTOR_MOVING_Y,
+  MOTOR_MOVING_Z
+};
+
+MotorState motor_state = MOTOR_IDLE;
+long current_step = 0;
+long target_steps = 0;
+bool direction_positive = false;
+unsigned long last_step_time = 0;
+long current_delay_microsec = 100;
+float movement_requested = 0; // mouvement demandé en mm ou tours
+volatile bool stop_requested = false;
+
+// Pour les mouvements composés (GoTo)
+bool goto_in_progress = false;
+float goto_target_x = 0;
+float goto_target_y = 0;
+enum GotoPhase { GOTO_X, GOTO_Y, GOTO_DONE };
+GotoPhase goto_phase = GOTO_X;
+#pragma endregion
+
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(PUL_X, OUTPUT);
+  pinMode(DIR_X, OUTPUT);
+  pinMode(ENA_X, OUTPUT);
+
+  pinMode(PUL_Y, OUTPUT);
+  pinMode(DIR_Y, OUTPUT);
+  pinMode(ENA_Y, OUTPUT);
+
+  pinMode(PUL_Z, OUTPUT);
+  pinMode(DIR_Z, OUTPUT);
+  pinMode(ENA_Z, OUTPUT);
+
+  pinMode(A0, INPUT_PULLUP);
+  pinMode(A1, INPUT_PULLUP);
+  pinMode(A2, INPUT_PULLUP);
+  pinMode(A3, INPUT_PULLUP);
+
+  Disable_All();
+
+  StartMove_Z(0.1f);
+  while(motor_state != MOTOR_IDLE) {
+    MotorStateMachine();
+  }
+  StartMove_Z(-0.1f);
+  while(motor_state != MOTOR_IDLE) {
+    MotorStateMachine();
+  }
+
+  Serial.println("Plane Scanner ready !");
+}
+
+#pragma region Fin de course
+#define X_min !digitalRead(A0)
+#define X_max !digitalRead(A1)
+#define Y_min digitalRead(A2)
+#define Y_max digitalRead(A3)
+#pragma endregion
+
+#pragma region Enable
+#define enable_on LOW
+#define enable_off HIGH
+
+void Enable_X() {
+  digitalWrite(ENA_Y, enable_off);
+  digitalWrite(ENA_Z, enable_off);
+  digitalWrite(ENA_X, enable_on);
+}
+void Enable_Y() {
+  digitalWrite(ENA_X, enable_off);
+  digitalWrite(ENA_Z, enable_off);
+  digitalWrite(ENA_Y, enable_on);
+}
+void Enable_Z() {
+  digitalWrite(ENA_X, enable_off);
+  digitalWrite(ENA_Y, enable_off);
+  digitalWrite(ENA_Z, enable_on);
+}
+void Disable_All() {
+  digitalWrite(ENA_X, enable_off);
+  digitalWrite(ENA_Y, enable_off);
+  digitalWrite(ENA_Z, enable_off);
+}
+#pragma endregion
+
+#pragma region Direction
+#define direction_X_plus digitalWrite(DIR_X, HIGH)
+#define direction_X_moins digitalWrite(DIR_X, LOW)
+#define direction_Y_plus digitalWrite(DIR_Y, LOW)
+#define direction_Y_moins digitalWrite(DIR_Y, HIGH)
+#define direction_Z_plus digitalWrite(DIR_Z, LOW)
+#define direction_Z_moins digitalWrite(DIR_Z, HIGH)
+#pragma endregion
+
+#pragma region Machine à états moteur
+
+void StartMove_X(float mm) {
+  if (motor_state != MOTOR_IDLE) {
+    Serial.println("Moteur occupé!");
+    return;
+  }
+  
+  movement_requested = mm;
+  motor_state = MOTOR_MOVING_X;
+  current_step = 0;
+  target_steps = abs((long)(mm * conversion_X_imp_to_mm));
+  direction_positive = (mm * conversion_X_imp_to_mm) > 0;
+  current_delay_microsec = delaisPasX_microsec;
+  last_step_time = 0;
+  
+  Enable_X();
+  
+  if (direction_positive) {
+    if (debug) Serial.print("X+");
+    direction_X_plus;
+  } else {
+    if (debug) Serial.print("X-");
+    direction_X_moins;
+  }
+  
+  if (debug) {
+    Serial.print("\t");
+    Serial.print(target_steps);
+    Serial.println("imps");
+  }
+}
+
+void StartMove_Y(float mm) {
+  if (motor_state != MOTOR_IDLE) {
+    Serial.println("Moteur occupé!");
+    return;
+  }
+  
+  movement_requested = mm;
+  motor_state = MOTOR_MOVING_Y;
+  current_step = 0;
+  long nbr_imp = mm * conversion_Y_imp_to_mm;
+  direction_positive = nbr_imp > 0;
+  target_steps = abs(nbr_imp);
+  current_delay_microsec = delaisPasY_microsec;
+  last_step_time = 0;
+  
+  Enable_Y();
+  
+  if (direction_positive) {
+    if (debug) Serial.print("Y+");
+    direction_Y_plus;
+  } else {
+    if (debug) Serial.print("Y-");
+    direction_Y_moins;
+  }
+  
+  if (conversion_Y_imp_to_mm < 0)
+    direction_positive = !direction_positive;
+  
+  if (debug) {
+    Serial.print("\t");
+    Serial.print(target_steps);
+    Serial.println("imps");
+  }
+}
+
+void StartMove_Z(float tour) {
+  if (motor_state != MOTOR_IDLE) {
+    Serial.println("Moteur occupé!");
+    return;
+  }
+  
+  movement_requested = tour;
+  motor_state = MOTOR_MOVING_Z;
+  current_step = 0;
+  long nbr_imp = tour * conversion_Z_imp_to_turn;
+  direction_positive = nbr_imp > 0;
+  target_steps = abs(nbr_imp);
+  current_delay_microsec = delaisPasZ_microsec;
+  last_step_time = 0;
+  
+  Enable_Z();
+  
+  if (direction_positive) {
+    if (debug) Serial.print("Z+");
+    direction_Z_plus;
+  } else {
+    if (debug) Serial.print("Z-");
+    direction_Z_moins;
+  }
+  
+  if (debug) {
+    Serial.print("\t");
+    Serial.print(target_steps);
+    Serial.println("imps");
+  }
+}
+
+void MotorStateMachine() {
+  if (motor_state == MOTOR_IDLE) return;
+  
+  // Vérifier si arrêt demandé
+  if (stop_requested) {
+    StopCurrentMovement();
+    return;
+  }
+  
+  // Vérifier si mouvement terminé
+  if (current_step >= target_steps) {
+    FinishCurrentMovement();
+    return;
+  }
+  
+  // Vérifier timing pour le prochain pas
+  unsigned long now = micros();
+  if (last_step_time > 0 && (now - last_step_time) < current_delay_microsec) {
+    return; // pas encore le moment
+  }
+  
+  // Exécuter un pas selon l'axe
+  switch(motor_state) {
+    case MOTOR_MOVING_X:
+      if (direction_positive && X_max) {
+        Serial.println("X max atteint !");
+        StopCurrentMovement();
+        return;
+      }
+      if (!direction_positive && X_min) {
+        Serial.println("X min atteint !");
+        StopCurrentMovement();
+        return;
+      }
+      digitalWrite(PUL_X, HIGH);
+      delayMicroseconds(current_delay_microsec);
+      digitalWrite(PUL_X, LOW);
+      break;
+      
+    case MOTOR_MOVING_Y:
+      if (direction_positive && Y_max) {
+        Serial.println("Y max atteint !");
+        StopCurrentMovement();
+        return;
+      }
+      if (!direction_positive && Y_min) {
+        Serial.println("Y min atteint !");
+        StopCurrentMovement();
+        return;
+      }
+      digitalWrite(PUL_Y, HIGH);
+      delayMicroseconds(current_delay_microsec);
+      digitalWrite(PUL_Y, LOW);
+      break;
+      
+    case MOTOR_MOVING_Z:
+      digitalWrite(PUL_Z, HIGH);
+      delayMicroseconds(current_delay_microsec);
+      digitalWrite(PUL_Z, LOW);
+      break;
+      
+    default:
+      break;
+  }
+  
+  current_step++;
+  last_step_time = now;
+}
+
+void StopCurrentMovement() {
+  float d_restant = 0;
+  
+  switch(motor_state) {
+    case MOTOR_MOVING_X:
+      d_restant = (float)(target_steps - current_step) / abs(conversion_X_imp_to_mm);
+      x = x + movement_requested - (movement_requested > 0 ? d_restant : -d_restant);
+      Serial.print("X interrompu. Restant: ");
+      Serial.print(d_restant);
+      Serial.println("mm");
+      break;
+      
+    case MOTOR_MOVING_Y:
+      d_restant = (float)(target_steps - current_step) / abs(conversion_Y_imp_to_mm);
+      y = y + movement_requested - (movement_requested > 0 ? d_restant : -d_restant);
+      Serial.print("Y interrompu. Restant: ");
+      Serial.print(d_restant);
+      Serial.println("mm");
+      break;
+      
+    case MOTOR_MOVING_Z:
+      Serial.println("Z interrompu");
+      break;
+      
+    default:
+      break;
+  }
+  
+  Disable_All();
+  motor_state = MOTOR_IDLE;
+  stop_requested = false;
+  
+  // Si on était dans un GoTo, l'annuler
+  if (goto_in_progress) {
+    goto_in_progress = false;
+    Serial.println("GoTo annulé");
+  }
+}
+
+void FinishCurrentMovement() {
+  switch(motor_state) {
+    case MOTOR_MOVING_X:
+      x = x + movement_requested;
+      break;
+    case MOTOR_MOVING_Y:
+      y = y + movement_requested;
+      break;
+    default:
+      break;
+  }
+  
+  Disable_All();
+  motor_state = MOTOR_IDLE;
+  
+  // Si on est dans un GoTo, passer à la phase suivante
+  if (goto_in_progress) {
+    ContinueGoto();
+  }
+}
+
+bool IsMotorBusy() {
+  return motor_state != MOTOR_IDLE;
+}
+
+#pragma endregion
+
+#pragma region GoTo avec phases
+
+void StartGoTo(float target_x, float target_y) {
+  if (!origine_initialized) {
+    Serial.println("Set origine first, GoTo Aborded.");
+    return;
+  }
+  
+  if (goto_in_progress || IsMotorBusy()) {
+    Serial.println("Mouvement en cours, GoTo annulé");
+    return;
+  }
+  
+  goto_in_progress = true;
+  goto_target_x = target_x;
+  goto_target_y = target_y;
+  goto_phase = GOTO_X;
+  
+  // Démarrer le mouvement X
+  StartMove_X(goto_target_x - x);
+}
+
+void ContinueGoto() {
+  if (!goto_in_progress) return;
+  
+  switch(goto_phase) {
+    case GOTO_X:
+      // X terminé, passer à Y
+      goto_phase = GOTO_Y;
+      StartMove_Y(goto_target_y - y);
+      break;
+      
+    case GOTO_Y:
+      // Y terminé, GoTo complet
+      goto_phase = GOTO_DONE;
+      goto_in_progress = false;
+      SendPosition();
+      break;
+      
+    default:
+      goto_in_progress = false;
+      break;
+  }
+}
+
+#pragma endregion
+
+void loop() {
+  // Gestion moteur en continu
+  MotorStateMachine();
+  
+  // Gestion communication en continu
+  CheckSerial();
+}
+
+void CheckSerial() {
+  if (Serial.available() == 0) return;
+  
+  // Vérification rapide du stop
+  if (Serial.peek() == 's') {
+    Serial.read();
+    stop_requested = true;
+    Serial.println("Stop demandé!");
+    return;
+  }
+  
+  // Lecture message complet
+  static unsigned int message_pos = 0;
+  
+  while (Serial.available() > 0) {
+    char inByte = Serial.read();
+    bool messageComplete = (inByte == '\n');
+    
+    if (!messageComplete && (message_pos < MAX_MESSAGE_LENGTH - 1)) {
+      message[message_pos] = inByte;
+      message_pos++;
+    } else {
+      message[message_pos] = '\0';
+      message_pos = 0;
+      
+      if (messageComplete) {
+        MessageManager();
+      }
+    }
+  }
+}
+
+bool MessageManager() {
+  switch (message[0]) {
+    case 'g':
+      ParseAndStartGoTo(message);
+      break;
+
+    case 'h':
+      SetYDelay(message);
+      break;
+
+    case 'x':
+      SetX(message);
+      break;
+
+    case 'y':
+      SetY(message);
+      break;
+
+    case 'z':
+      SetZ(message);
+      break;
+
+    case 'o':
+      StartGotoMin();
+      break;
+
+    case 'j':
+      StartGotoMax();
+      break;
+
+    case 'c':
+      StartCalibration();
+      break;
+
+    case 'f':
+      SendFinDeCourse();
+      break;
+
+    case 'k':
+      SendPositionMax();
+      break;
+
+    case 'p':
+      SendPosition();
+      break;
+
+    case 'd':
+      SetDebug(message);
+      break;
+      
+    case 's':
+      stop_requested = true;
+      Serial.println("Stop activé");
+      break;
+
+    default:
+      Serial.print("Message non pris en compte : ");
+      Serial.println(message);
+      return false;
+  }
+  return true;
+}
+
+void StartGotoMin() {
+  if (IsMotorBusy() || goto_in_progress) {
+    Serial.println("Mouvement en cours");
+    return;
+  }
+  StartMove_X(-1000);
+  StartMove_Y(-1000);
+}
+
+void StartGotoMax() {
+  if (IsMotorBusy() || goto_in_progress) {
+    Serial.println("Mouvement en cours");
+    return;
+  }
+  StartMove_X(1000);
+  StartMove_Y(1000);
+}
+
+void StartCalibration() {
+  // Pour la calibration complète, il faudrait une machine à états dédiée
+  // Version simplifiée : lancer juste le premier mouvement
+  Serial.println("Calibration: utilisez 'o' puis 'j' séparément");
+}
+
+void SendPosition() {
+  Serial.print("Position = ");
+  Serial.print(x);
+  Serial.print(", ");
+  Serial.println(y);
+}
+
+void SendPositionMax() {
+  Serial.print("PositionMax = ");
+  Serial.print(x_max);
+  Serial.print(", ");
+  Serial.println(y_max);
+}
+
+void SendFinDeCourse() {
+  Serial.print("X-+Y-+ : ");
+  Serial.print(X_min);
+  Serial.print(X_max);
+  Serial.print(Y_min);
+  Serial.print(Y_max);
+  Serial.println("");
+}
+
+void SetOrigine() {
+  x = 0;
+  y = 0;
+  origine_initialized = true;
+  Serial.println("Origine définie");
+}
+
+void SetMax() {
+  x_max = x;
+  y_max = y;
+}
+
+void SetX(String m) {
+  if (IsMotorBusy()) {
+    Serial.println("Moteur occupé");
+    return;
+  }
+  float moveX = m.substring(1).toFloat();
+  StartMove_X(moveX);
+}
+
+void SetY(String m) {
+  if (IsMotorBusy()) {
+    Serial.println("Moteur occupé");
+    return;
+  }
+  float moveY = m.substring(1).toFloat();
+  StartMove_Y(moveY);
+}
+
+void SetZ(String m) {
+  if (IsMotorBusy()) {
+    Serial.println("Moteur occupé");
+    return;
+  }
+  float moveZ = m.substring(1).toFloat();
+  StartMove_Z(moveZ);
+}
+
+void SetYDelay(String m) {
+  int tmp = m.substring(1).toInt();
+  delaisPasY_microsec = tmp;
+  Serial.print("Délai Y: ");
+  Serial.println(tmp);
+}
+
+void ParseAndStartGoTo(String m) {
+  int sepIndex = m.indexOf(';');
+  String xStr = m.substring(1, sepIndex);
+  String yStr = m.substring(sepIndex + 1);
+  
+  float newx = xStr.toFloat();
+  float newy = yStr.toFloat();
+  
+  StartGoTo(newx, newy);
+}
+
+void SetDebug(String m) {
+  int val = m.substring(1).toInt();
+  debug = (val == 1);
+  Serial.print("Debug: ");
+  Serial.println(debug ? "ON" : "OFF");
+}

@@ -1,0 +1,36 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="ScanPlaneMaker.Properties" GeneratedClassName="Settings">
+  <Profiles />
+  <Settings>
+    <Setting Name="saveFolderPath" Type="System.String" Scope="User">
+      <Value Profile="(Default)">No folder selected</Value>
+    </Setting>
+    <Setting Name="y_range_value" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">2.4</Value>
+    </Setting>
+    <Setting Name="x_range_value" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">2.4</Value>
+    </Setting>
+    <Setting Name="image_stability_Threshold" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">6</Value>
+    </Setting>
+    <Setting Name="scan_start_x_value" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">50.1</Value>
+    </Setting>
+    <Setting Name="scan_start_y_value" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">10.3</Value>
+    </Setting>
+    <Setting Name="scan_end_y_value" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">113.6</Value>
+    </Setting>
+    <Setting Name="scan_end_x_value" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">67.9</Value>
+    </Setting>
+    <Setting Name="measure_pix" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">532</Value>
+    </Setting>
+    <Setting Name="measure_mm" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">9</Value>
+    </Setting>
+  </Settings>
+</SettingsFile>
