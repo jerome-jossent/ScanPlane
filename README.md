@@ -1,4 +1,7 @@
 Projet en cours
+- IHM : .Net8 (WPF/C#)
+- XYZ : Arduino
+- Viewer : Unity
 
 Montage :
 ![Montage](https://github.com/jerome-jossent/ScanPlane/blob/main/medias/ScanPlane_1.jpg)
