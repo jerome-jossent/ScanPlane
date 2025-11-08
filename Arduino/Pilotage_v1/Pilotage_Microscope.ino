@@ -25,8 +25,8 @@ long delaisPasX_microsec = 100;  // => inverse de vitesse X 100
 long delaisPasY_microsec = 100;   // => inverse de vitesse Y 10-5
 long delaisPasZ_microsec = 200;  // => inverse de vitesse Z 200
 
-float conversion_X_imp_to_mm = -160.0f;
-float conversion_Y_imp_to_mm = -160.0f; // tige fileté +3160
+float conversion_X_imp_to_mm = -160.0f; //(32*200)/40 : 32micropas * 200pas <=> 1 tour <=> 20 dents <=> 20x2 mm = 40mm
+float conversion_Y_imp_to_mm = -160.0f;  //(32*200)/40 : 32micropas * 200pas <=> 1 tour <=> 20 dents <=> 20x2 mm = 40mm
 float conversion_Z_imp_to_turn = -6400.0f;
 
 #pragma region DEBUG
