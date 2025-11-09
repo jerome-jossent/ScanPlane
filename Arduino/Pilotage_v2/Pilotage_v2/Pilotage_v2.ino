@@ -23,13 +23,16 @@ const float conversion_Y_imp_to_mm = 160.0f;
 const unsigned long PULSE_WIDTH = 100;       // largeur impulsion µs
 const unsigned long MIN_STEP_DELAY = 100;    // délai min entre pas (µs) = vitesse max
 const unsigned long MAX_STEP_DELAY = 1000;   // délai max entre pas (µs) = vitesse min
-const float ACCEL_FACTOR = 0.99;             // facteur d'accélération (0.9-0.99)
+const float ACCEL_FACTOR = 0.998;             // facteur d'accélération (0.9-0.99)
+const unsigned long decelDistance = 1200; // distance de décélération en pas
+
+bool unlatchMotorAfterUse = true;
 
 // ===== VARIABLES D'ETAT =====
 struct AxisState {
   long position;           // position actuelle en impulsions
   long targetPosition;     // position cible en impulsions
-  unsigned long stepDelay; // délai entre pas (µs)
+  float stepDelay; // délai entre pas (µs)
   unsigned long lastStepTime; // dernier pas en µs
   bool moving;             // en mouvement
   int direction;           // direction actuelle
@@ -55,6 +58,7 @@ String inputBuffer = "";
 // ===== SETUP =====
 void setup() {
   Serial.begin(115200);
+  Serial.println("_________________");
   
   // Configuration pins moteur X
   pinMode(ENA_X, OUTPUT);
@@ -208,22 +212,29 @@ void calibrate() {
 }
 
 void homeAxis(char axis) {
-  if (axis == 'X')
+  if (axis == 'X'){
+    axisX.stepDelay = MIN_STEP_DELAY;
     while (!X_min) 
       stepMotor('X', -1);
-  if (axis == 'Y') 
+  }
+
+  if (axis == 'Y') {
+    axisY.stepDelay = MIN_STEP_DELAY;  
     while (!Y_min)
       stepMotor('Y', -1);
+  }
 }
 
 void moveAxisUntilLimit(char axis, int direction) {
   if (axis == 'X') {
+    axisX.stepDelay = MIN_STEP_DELAY;
     while (!X_max) {
       stepMotor('X', direction);
       if (direction > 0) axisX.position++;
       else axisX.position--;
     }
   } else {
+    axisY.stepDelay = MIN_STEP_DELAY;
     while (!Y_max) {
       stepMotor('Y', direction);
       if (direction > 0) axisY.position++;
@@ -252,8 +263,8 @@ void moveTo(float x_mm, float y_mm) {
 
   axisX.moving = true;
   axisY.moving = true;
-  axisX.stepDelay = MAX_STEP_DELAY;
-  axisY.stepDelay = MAX_STEP_DELAY;
+  axisX.stepDelay = MAX_STEP_DELAY; // accélération douce
+  axisY.stepDelay = MAX_STEP_DELAY; // accélération douce
   axisX.targetPosition = targetX;
   axisY.targetPosition = targetY;
   
@@ -295,8 +306,8 @@ void stopAllMotion() {
   axisY.targetPosition = axisY.position;
   axisX.moving = false;
   axisY.moving = false;
-  axisX.stepDelay = MAX_STEP_DELAY;
-  axisY.stepDelay = MAX_STEP_DELAY;
+  // axisX.stepDelay = MAX_STEP_DELAY;
+  // axisY.stepDelay = MAX_STEP_DELAY;
   continuousX = false;
   continuousY = false;
 
@@ -323,17 +334,15 @@ void updateMotion() {
         Serial.println("WARN: Fin de course X atteint");
       } else {
         // Gestion rampe d'accélération/décélération
-        unsigned long decelDistance = 1500; // distance de décélération en pas
-        
         if (d_remaining > decelDistance) {
           // Accélération
-          axisX.stepDelay = (unsigned long)(axisX.stepDelay * ACCEL_FACTOR);// diminution du temps entre chaque pas
+          axisX.stepDelay = axisX.stepDelay * ACCEL_FACTOR;// diminution du temps entre chaque pas
           if (axisX.stepDelay <= MIN_STEP_DELAY)
             axisX.stepDelay = MIN_STEP_DELAY; //vitesse max
 
         } else { //APPROCHE DE LA TARGET
           // Décélération
-          axisX.stepDelay = (unsigned long)(axisX.stepDelay / ACCEL_FACTOR);// augmentation du temps entre chaque pas
+          axisX.stepDelay = axisX.stepDelay / ACCEL_FACTOR;// augmentation du temps entre chaque pas
           if (axisX.stepDelay >= MAX_STEP_DELAY)
             axisX.stepDelay = MAX_STEP_DELAY;
         }
@@ -349,8 +358,8 @@ void updateMotion() {
     }
   } else {
     axisX.moving = false;
-    //axisX.stepDelay = MAX_STEP_DELAY;
-    digitalWrite(ENA_X, HIGH);  // Désactiver moteur
+    if(unlatchMotorAfterUse)
+      digitalWrite(ENA_X, HIGH);  // Désactiver moteur
   }
   
   // Mise à jour axe Y (identique mais indépendant)
@@ -365,22 +374,18 @@ void updateMotion() {
         axisY.moving = false;
         Serial.println("WARN: Fin de course Y atteint");
       } else {
-        // Gestion rampe d'accélération/décélération
-        unsigned long decelDistance = 1500; // distance de décélération en pas
-        
+        // Gestion rampe d'accélération/décélération        
         if (d_remaining > decelDistance) {
           // Accélération
-          axisY.stepDelay = (unsigned long)(axisY.stepDelay * ACCEL_FACTOR);
-          if (axisY.stepDelay < MIN_STEP_DELAY) {
+          axisY.stepDelay = axisY.stepDelay * ACCEL_FACTOR;
+          if (axisY.stepDelay <= MIN_STEP_DELAY) {
             axisY.stepDelay = MIN_STEP_DELAY;
           }
         } else {
           // Décélération
-          axisY.stepDelay = (unsigned long)(axisY.stepDelay / ACCEL_FACTOR);
-          if (axisY.stepDelay > MAX_STEP_DELAY) {
+          axisY.stepDelay = axisY.stepDelay / ACCEL_FACTOR;
+          if (axisY.stepDelay >= MAX_STEP_DELAY)
             axisY.stepDelay = MAX_STEP_DELAY;
-          }
-        }
         
         stepMotor('Y', direction);
         axisY.position += direction;
@@ -390,8 +395,8 @@ void updateMotion() {
     }
   } else {
     axisY.moving = false;
-    //axisY.stepDelay = MAX_STEP_DELAY;  
-    digitalWrite(ENA_Y, HIGH);  // Désactiver moteur
+    if(unlatchMotorAfterUse)
+      digitalWrite(ENA_Y, HIGH);  // Désactiver moteur
   }
 }
 
@@ -400,19 +405,19 @@ void stepMotor(char axis, int direction) {
   if (axis == 'X') {
     digitalWrite(DIR_X, direction > 0 ? HIGH : LOW);
     // delayMicroseconds(PULSE_WIDTH); // Délai après changement de direction
-    digitalWrite(PUL_X, HIGH);
-    delayMicroseconds(PULSE_WIDTH);
     digitalWrite(PUL_X, LOW);
-    delayMicroseconds(PULSE_WIDTH);
+    delayMicroseconds((unsigned long)axisX.stepDelay);
+    digitalWrite(PUL_X, HIGH);
+    delayMicroseconds((unsigned long)axisX.stepDelay);
   } 
 
   if (axis == 'Y') {
     digitalWrite(DIR_Y, direction > 0 ? HIGH : LOW);
     // delayMicroseconds(PULSE_WIDTH); // Délai après changement de direction
-    digitalWrite(PUL_Y, HIGH);
-    delayMicroseconds(PULSE_WIDTH);
     digitalWrite(PUL_Y, LOW);
-    delayMicroseconds(PULSE_WIDTH);
+    delayMicroseconds((unsigned long)axisY.stepDelay);
+    digitalWrite(PUL_Y, HIGH);
+    delayMicroseconds((unsigned long)axisY.stepDelay);
   }
 }
 
