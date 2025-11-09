@@ -1,32 +1,22 @@
-﻿//using AForge.Video;
-//using AForge.Video.DirectShow;
-
-using Microsoft.Win32;
+﻿using Microsoft.Win32;
 using OpenCvSharp;
 using OpenCvSharp.WpfExtensions;
-using System;
 using System.ComponentModel;
 using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
 using System.IO;
 using System.IO.Ports;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
-using System.Text.RegularExpressions;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Media.Media3D;
 using System.Windows.Threading;
 using Windows.Devices.Enumeration;
 using Windows.Graphics.Imaging;
 using Windows.Media.Capture;
 using Windows.Media.Capture.Frames;
-using Windows.Media.Devices;
 using Windows.Media.MediaProperties;
 
 namespace ScanPlaneMaker
@@ -317,6 +307,9 @@ namespace ScanPlaneMaker
         bool scan_abord = false;
         #endregion
 
+        bool moving_X = false;
+        bool moving_Y = false;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -421,7 +414,7 @@ namespace ScanPlaneMaker
                     return;
                 }
 
-                _serialPort = new SerialPort(selectedPort, 9600, Parity.None, 8, StopBits.One);
+                _serialPort = new SerialPort(selectedPort, 115200, Parity.None, 8, StopBits.One);
                 _serialPort.DataReceived += SerialPort_DataReceived;
                 _serialPort.Open();
 
@@ -528,33 +521,40 @@ namespace ScanPlaneMaker
             txtReceivedData.Clear();
         }
 
-        void _btn_move_left_click(object sender, System.Windows.Input.MouseButtonEventArgs e)
-        {
-            Move_X_moins();
-        }
-        void _btn_move_right_click(object sender, System.Windows.Input.MouseButtonEventArgs e)
-        {
-            Move_X_plus();
-        }
-        void _btn_move_down_click(object sender, System.Windows.Input.MouseButtonEventArgs e)
-        {
-            Move_Y_moins();
-        }
-        void _btn_move_up_click(object sender, System.Windows.Input.MouseButtonEventArgs e)
-        {
-            Move_Y_plus();
-        }
+        void _btn_move_left_click(object sender, MouseButtonEventArgs e) { Move_X_moins(); }
+        void _btn_move_left_off_click(object sender, MouseButtonEventArgs e) { Move_X_STOP(); }
+        void _btn_move_left_off_click(object sender, MouseEventArgs e) { Move_X_STOP(); }
+
+
+
+        void _btn_move_right_click(object sender, MouseButtonEventArgs e) { Move_X_plus(); }
+        void _btn_move_right_off_click(object sender, MouseButtonEventArgs e) { Move_X_STOP(); }
+        void _btn_move_right_off_click(object sender, MouseEventArgs e) { Move_X_STOP(); }
+
+
+
+        void _btn_move_up_click(object sender, MouseButtonEventArgs e) { Move_Y_plus(); }
+        void _btn_move_up_off_click(object sender, MouseButtonEventArgs e) { Move_Y_STOP(); }
+        void _btn_move_up_off_click(object sender, MouseEventArgs e) { Move_Y_STOP(); }
+
+
+
+        void _btn_move_down_click(object sender, MouseButtonEventArgs e) { Move_Y_moins(); }        
+        void _btn_move_down_off_click(object sender, MouseButtonEventArgs e) { Move_Y_STOP(); }
+        void _btn_move_down_off_click(object sender, MouseEventArgs e) { Move_Y_STOP(); }
+
+
 
         void _btn_scan_set_start_click(object sender, MouseButtonEventArgs e)
         {
-            Send("p");
+            Send("get");
             Thread.Sleep(200);
             _scan_start_x_value = _x;
             _scan_start_y_value = _y;
         }
         void _btn_scan_set_end_click(object sender, MouseButtonEventArgs e)
         {
-            Send("p");
+            Send("get");
             Thread.Sleep(200);
             _scan_end_x_value = _x;
             _scan_end_y_value = _y;
@@ -563,20 +563,20 @@ namespace ScanPlaneMaker
 
         void _btn_move_X_max_y_max_click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            Send("j");
+            Send("move_X_max_y_max");
             position_max_wait = true;
         }
         void _btn_move_X_min_y_min_click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            Send("o");
+            Send("move_X_min_y_min");
         }
         void _btn_move_X_min_y_max_click(object sender, MouseButtonEventArgs e)
         {
-            Send("7");
+            Send("move_X_min_y_max");
         }
         void _btn_move_X_max_y_min_click(object sender, MouseButtonEventArgs e)
         {
-            Send("3");
+            Send("move_X_max_y_min");
         }
 
         void _btn_move_Zplus_click(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -604,31 +604,28 @@ namespace ScanPlaneMaker
         {
             switch (e.Key)
             {
-                case System.Windows.Input.Key.Space:
-                    break;
+                case Key.Space:    STOP(); break;
+                case Key.PageUp:   Move_Z_plus(1); break;
+                case Key.PageDown: Move_Z_moins(1); break;
+                case Key.Left:     Move_X_moins(); break;
+                case Key.Up:       Move_Y_plus(); break;
+                case Key.Right:    Move_X_plus(); break;
+                case Key.Down:     Move_Y_moins(); break;
+            }
+            e.Handled = true;
+        }
 
-                case System.Windows.Input.Key.PageUp:
-                    Move_Z_plus(1);
-                    break;
-
-                case System.Windows.Input.Key.PageDown:
-                    Move_Z_moins(1);
-                    break;
-
-
-                case System.Windows.Input.Key.Left:
-                    Move_X_moins();
-                    break;
-                case System.Windows.Input.Key.Up:
-                    Move_Y_plus();
-                    break;
-                case System.Windows.Input.Key.Right:
-                    Move_X_plus();
-                    break;
-                case System.Windows.Input.Key.Down:
-                    Move_Y_moins();
-                    break;
-
+        void KeyUp_Pressed(object sender, KeyEventArgs e)
+        {
+            switch (e.Key)
+            {
+                case Key.Space:     break;
+                case Key.PageUp:    Move_Z_plus(0); break;
+                case Key.PageDown:  Move_Z_moins(0); break;
+                case Key.Left:      Move_X_STOP(); break;
+                case Key.Up:        Move_Y_STOP(); break;
+                case Key.Right:     Move_X_STOP(); break;
+                case Key.Down:      Move_Y_STOP(); break;
             }
         }
 
@@ -692,7 +689,7 @@ namespace ScanPlaneMaker
 
         void _btn_get_position_click(object sender, MouseButtonEventArgs e)
         {
-            Send("p");
+            Send("get");
         }
 
         void _btn_measure_on_image_click(object sender, MouseButtonEventArgs e)
@@ -818,14 +815,14 @@ namespace ScanPlaneMaker
         void Send_GoTo(Point2d p) { Send_GoTo(p.X, p.Y); }
         void Send_GoTo(double x, double y)
         {
-            Send("g"
+            Send("pos"
                 + x.ToString("0.00").Replace(",", ".")
                 + ";"
                 + y.ToString("0.00").Replace(",", "."));
         }
         void Send_get_positionMax()
         {
-            Send("k");
+            Send("get_positionMax");
         }
 
         void Send(string dataToSend)
@@ -1360,10 +1357,41 @@ namespace ScanPlaneMaker
         #endregion
 
         #region Move
-        void Move_X_plus() { Send("x" + ((float)_xy_move_value).ToString("0.000").Replace(",", ".")); }
-        void Move_X_moins() { Send("x-" + ((float)_xy_move_value).ToString("0.000").Replace(",", ".")); }
-        void Move_Y_plus() { Send("y" + ((float)_xy_move_value).ToString("0.000").Replace(",", ".")); }
-        void Move_Y_moins() { Send("y-" + ((float)_xy_move_value).ToString("0.000").Replace(",", ".")); }
+        void Move_X_moins()
+        {
+            moving_X = true;
+            Send("CONT X -1");// + ((float)_xy_move_value).ToString("0.000").Replace(",", ".")); }
+        }
+        void Move_X_plus()
+        {
+            moving_X = true;
+            Send("CONT X 1");// + ((float)_xy_move_value).ToString("0.000").Replace(",", ".")); }
+        }
+        void Move_X_STOP()
+        {
+            if (!moving_X) return;
+            moving_X = false;
+            Send("CONT X 0");
+        }
+
+        void Move_Y_moins()
+        {
+            moving_Y = true;
+            Send("CONT Y -1");// + ((float)_xy_move_value).ToString("0.000").Replace(",", ".")); }
+        }
+        void Move_Y_plus()
+        {
+            moving_Y = true;
+            Send("CONT Y 1");// + ((float)_xy_move_value).ToString("0.000").Replace(",", ".")); }
+        }
+        void Move_Y_STOP()
+        {
+            if (!moving_Y) return;
+            moving_Y = false;
+            Send("CONT Y 0");
+        }
+
+        void STOP() { Send("STOP"); }
 
         void Move_Z_plus(float factor) { Send("z" + (factor * 0.02).ToString("0.00").Replace(",", ".")); }
         void Move_Z_moins(float factor) { Send("z-" + (factor * 0.02).ToString("0.00").Replace(",", ".")); }

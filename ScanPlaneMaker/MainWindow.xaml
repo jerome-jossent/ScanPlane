@@ -136,12 +136,14 @@ Title="{Binding _title, UpdateSourceTrigger=PropertyChanged}" Height="900" Width
                             <RowDefinition Height="auto"/>
                             <RowDefinition Height="auto"/>
                         </Grid.RowDefinitions>
-                        <Image Source="/Images/Fleche Bas.png" Grid.Column="1" Grid.Row="2" Height="30" RenderOptions.BitmapScalingMode="Fant" MouseDown="_btn_move_down_click"/>
-                        <Image Source="/Images/Fleche Gauche.png" Grid.Column="0" Grid.Row="1" Height="30" RenderOptions.BitmapScalingMode="Fant" MouseDown="_btn_move_left_click"/>
-                        <Image Source="/Images/Lecture.png" Grid.Column="2" Grid.Row="1" Height="30" RenderOptions.BitmapScalingMode="Fant" MouseDown="_btn_move_right_click"/>
-                        <Image Source="/Images/Fleche Haut.png" Grid.Column="1" Grid.Row="0" Height="30" RenderOptions.BitmapScalingMode="Fant" MouseDown="_btn_move_up_click"/>
+                        <Image Source="/Images/Fleche Bas.png" Grid.Column="1" Grid.Row="2" Height="30" RenderOptions.BitmapScalingMode="Fant" MouseDown="_btn_move_down_click" MouseLeave="_btn_move_down_off_click" MouseUp="_btn_move_down_off_click"/>
+                        <Image Source="/Images/Fleche Gauche.png" Grid.Column="0" Grid.Row="1" Height="30" RenderOptions.BitmapScalingMode="Fant" MouseDown="_btn_move_left_click" MouseLeave="_btn_move_left_off_click" MouseUp="_btn_move_left_off_click"/>
+                        <Image Source="/Images/Lecture.png" Grid.Column="2" Grid.Row="1" Height="30" RenderOptions.BitmapScalingMode="Fant" MouseDown="_btn_move_right_click" MouseLeave="_btn_move_right_off_click" MouseUp="_btn_move_right_off_click"/>
+                        <Image Source="/Images/Fleche Haut.png" Grid.Column="1" Grid.Row="0" Height="30" RenderOptions.BitmapScalingMode="Fant" MouseDown="_btn_move_up_click" MouseLeave="_btn_move_up_off_click" MouseUp="_btn_move_up_off_click"/>
 
-                        <!--<Button Grid.Column="1" Grid.Row="1" KeyDown="KeyDown_Pressed" Foreground="White"/>-->
+                        <TextBox Grid.Column="1" Grid.Row="1" 
+                                 VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                                 PreviewKeyDown="KeyDown_Pressed" PreviewKeyUp="KeyUp_Pressed"/>
 
                         <Image Source="/Images/Go_NE.png" Grid.Column="2" Grid.Row="0" Height="30" RenderOptions.BitmapScalingMode="Fant" MouseDown="_btn_move_X_max_y_max_click"/>
                         <Image Source="/Images/Go_SO.png" Grid.Column="0" Grid.Row="2" Height="30" RenderOptions.BitmapScalingMode="Fant" MouseDown="_btn_move_X_min_y_min_click"/>

@@ -165,7 +165,8 @@ void processCommand(String cmd) {
     sendPosition();
   }
   else {
-    Serial.println("ERR: Commande inconnue");
+    Serial.print("ERR commande inconnue : ");
+    Serial.println(cmd);
   }
 }
 
@@ -400,6 +401,9 @@ void updateMotion() {
             axisX.stepDelay = MAX_STEP_DELAY;
         }
 
+        if (continuousX)
+          axisX.stepDelay = MIN_STEP_DELAY;
+
         stepMotor('X', direction);
         axisX.position += direction;
         axisX.lastStepTime = currentTime;
@@ -442,6 +446,9 @@ void updateMotion() {
             axisY.stepDelay = MAX_STEP_DELAY;
         }
         
+        if (continuousY)
+          axisY.stepDelay = MIN_STEP_DELAY;
+
         stepMotor('Y', direction);
         axisY.position += direction;
         axisY.lastStepTime = currentTime;
