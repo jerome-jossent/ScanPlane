@@ -21,9 +21,9 @@ const float conversion_Y_imp_to_mm = 160.0f;
 
 // ===== PARAMETRES MOUVEMENT =====
 const unsigned long PULSE_WIDTH = 100;       // largeur impulsion µs
-const unsigned long MIN_STEP_DELAY = 200;    // délai min entre pas (µs) = vitesse max
+const unsigned long MIN_STEP_DELAY = 100;    // délai min entre pas (µs) = vitesse max
 const unsigned long MAX_STEP_DELAY = 1000;   // délai max entre pas (µs) = vitesse min
-const float ACCEL_FACTOR = 0.98;             // facteur d'accélération (0.9-0.99)
+const float ACCEL_FACTOR = 0.99;             // facteur d'accélération (0.9-0.99)
 
 // ===== VARIABLES D'ETAT =====
 struct AxisState {
@@ -76,7 +76,11 @@ void setup() {
   pinMode(A2, INPUT_PULLUP);
   pinMode(A3, INPUT_PULLUP);
   
-  Serial.println("CNC 2 axes pret");
+  while (!Serial){}; 
+  
+  Serial.println("AutoCalibration (voir Setup)");
+  calibrate();
+
   Serial.println("Commandes: CAL, POS x y, CONT axis dir, STOP, GET");
 }
 
@@ -166,9 +170,9 @@ void calibrate() {
   axisX.position = 0;
   axisY.position = 0;
   Serial.println("Position (0,0) atteinte");
-  delay(500);
   
   // 2. Trouver X max
+  long t = millis();
   Serial.println("Recherche X max...");
   moveAxisUntilLimit('X', 1);
   X_limit_max = axisX.position;
@@ -176,7 +180,6 @@ void calibrate() {
   Serial.print("X max: ");
   Serial.print(x_max_mm);
   Serial.println(" mm");
-  delay(500);
   
   // 3. Trouver Y max
   Serial.println("Recherche Y max...");
@@ -187,6 +190,11 @@ void calibrate() {
   Serial.print(y_max_mm);
   Serial.println(" mm");
   
+  long dt = millis() - t;
+  Serial.print("t calibration = ");
+  Serial.print((float)dt/1000, 1);
+  Serial.println(" ms");
+  
   isCalibrated = true;
   Serial.println("Calibration terminee");
   Serial.print("Zone de travail: ");
@@ -196,21 +204,16 @@ void calibrate() {
   Serial.println(" mm");
   
   // Retour à l'origine
-  moveTo(0, 0);
+  //moveTo(0, 0);
 }
 
 void homeAxis(char axis) {
-  if (axis == 'X') {
-    while (!X_min) {
+  if (axis == 'X')
+    while (!X_min) 
       stepMotor('X', -1);
-      delayMicroseconds(PULSE_WIDTH);
-    }
-  } else {
-    while (!Y_min) {
+  if (axis == 'Y') 
+    while (!Y_min)
       stepMotor('Y', -1);
-      delayMicroseconds(PULSE_WIDTH);
-    }
-  }
 }
 
 void moveAxisUntilLimit(char axis, int direction) {
@@ -219,14 +222,12 @@ void moveAxisUntilLimit(char axis, int direction) {
       stepMotor('X', direction);
       if (direction > 0) axisX.position++;
       else axisX.position--;
-      // delayMicroseconds(PULSE_WIDTH);
     }
   } else {
     while (!Y_max) {
       stepMotor('Y', direction);
       if (direction > 0) axisY.position++;
       else axisY.position--;
-      // delayMicroseconds(PULSE_WIDTH);
     }
   }
 }
@@ -246,12 +247,15 @@ void moveTo(float x_mm, float y_mm) {
     return;
   }
   
-  axisX.targetPosition = targetX;
-  axisY.targetPosition = targetY;
+  digitalWrite(ENA_X, LOW);  // Activer moteur
+  digitalWrite(ENA_Y, LOW);  // Activer moteur
+
   axisX.moving = true;
   axisY.moving = true;
   axisX.stepDelay = MAX_STEP_DELAY;
   axisY.stepDelay = MAX_STEP_DELAY;
+  axisX.targetPosition = targetX;
+  axisY.targetPosition = targetY;
   
   Serial.print("Deplacement vers (");
   Serial.print(x_mm);
@@ -271,7 +275,9 @@ void setContinuousMove(char axis, int direction) {
     } else {
       Serial.println("Arret continu X");
     }
-  } else if (axis == 'Y') {
+  }
+  
+  if (axis == 'Y') {
     continuousY = (direction != 0);
     continuousYDir = direction;
     if (direction != 0) {
@@ -293,6 +299,10 @@ void stopAllMotion() {
   axisY.stepDelay = MAX_STEP_DELAY;
   continuousX = false;
   continuousY = false;
+
+  digitalWrite(ENA_X, HIGH);  // Désactiver moteur
+  digitalWrite(ENA_Y, HIGH);  // Désactiver moteur
+
   Serial.println("Arret total");
 }
 
@@ -303,7 +313,7 @@ void updateMotion() {
   // Mise à jour axe X
   if (axisX.moving && axisX.position != axisX.targetPosition) {
     if (currentTime - axisX.lastStepTime >= axisX.stepDelay) {
-      long remaining = abs(axisX.targetPosition - axisX.position);
+      long d_remaining = abs(axisX.targetPosition - axisX.position);
       int direction = (axisX.targetPosition > axisX.position) ? 1 : -1;
       
       // Vérification sécurité
@@ -313,42 +323,40 @@ void updateMotion() {
         Serial.println("WARN: Fin de course X atteint");
       } else {
         // Gestion rampe d'accélération/décélération
-        // unsigned long decelDistance = 500; // distance de décélération en pas
+        unsigned long decelDistance = 1500; // distance de décélération en pas
         
-        // if (remaining > decelDistance) {
-        //   // Accélération
-        //   axisX.stepDelay = (unsigned long)(axisX.stepDelay * ACCEL_FACTOR);
-        //   if (axisX.stepDelay < MIN_STEP_DELAY) {
-        //     axisX.stepDelay = MIN_STEP_DELAY;
-        //   }
-        // } else {
-        //   // Décélération
-        //   axisX.stepDelay = (unsigned long)(axisX.stepDelay / ACCEL_FACTOR);
-        //   if (axisX.stepDelay > MAX_STEP_DELAY) {
-        //     axisX.stepDelay = MAX_STEP_DELAY;
-        //   }
-        // }
-        axisX.stepDelay = PULSE_WIDTH;
+        if (d_remaining > decelDistance) {
+          // Accélération
+          axisX.stepDelay = (unsigned long)(axisX.stepDelay * ACCEL_FACTOR);// diminution du temps entre chaque pas
+          if (axisX.stepDelay <= MIN_STEP_DELAY)
+            axisX.stepDelay = MIN_STEP_DELAY; //vitesse max
+
+        } else { //APPROCHE DE LA TARGET
+          // Décélération
+          axisX.stepDelay = (unsigned long)(axisX.stepDelay / ACCEL_FACTOR);// augmentation du temps entre chaque pas
+          if (axisX.stepDelay >= MAX_STEP_DELAY)
+            axisX.stepDelay = MAX_STEP_DELAY;
+        }
 
         stepMotor('X', direction);
         axisX.position += direction;
         axisX.lastStepTime = currentTime;
         axisX.direction = direction;
         
-
-//ne faire que X, puis que Y
+        //ne faire que X, puis que Y
         return;
       }
     }
   } else {
     axisX.moving = false;
-    axisX.stepDelay = MAX_STEP_DELAY;
+    //axisX.stepDelay = MAX_STEP_DELAY;
+    digitalWrite(ENA_X, HIGH);  // Désactiver moteur
   }
   
   // Mise à jour axe Y (identique mais indépendant)
   if (axisY.moving && axisY.position != axisY.targetPosition) {
     if (currentTime - axisY.lastStepTime >= axisY.stepDelay) {
-      long remaining = abs(axisY.targetPosition - axisY.position);
+      long d_remaining = abs(axisY.targetPosition - axisY.position);
       int direction = (axisY.targetPosition > axisY.position) ? 1 : -1;
       
       // Vérification sécurité
@@ -358,23 +366,21 @@ void updateMotion() {
         Serial.println("WARN: Fin de course Y atteint");
       } else {
         // Gestion rampe d'accélération/décélération
-        // unsigned long decelDistance = 500; // distance de décélération en pas
+        unsigned long decelDistance = 1500; // distance de décélération en pas
         
-        // if (remaining > decelDistance) {
-        //   // Accélération
-        //   axisY.stepDelay = (unsigned long)(axisY.stepDelay * ACCEL_FACTOR);
-        //   if (axisY.stepDelay < MIN_STEP_DELAY) {
-        //     axisY.stepDelay = MIN_STEP_DELAY;
-        //   }
-        // } else {
-        //   // Décélération
-        //   axisY.stepDelay = (unsigned long)(axisY.stepDelay / ACCEL_FACTOR);
-        //   if (axisY.stepDelay > MAX_STEP_DELAY) {
-        //     axisY.stepDelay = MAX_STEP_DELAY;
-        //   }
-        // }      
-              axisY.stepDelay = PULSE_WIDTH;
-
+        if (d_remaining > decelDistance) {
+          // Accélération
+          axisY.stepDelay = (unsigned long)(axisY.stepDelay * ACCEL_FACTOR);
+          if (axisY.stepDelay < MIN_STEP_DELAY) {
+            axisY.stepDelay = MIN_STEP_DELAY;
+          }
+        } else {
+          // Décélération
+          axisY.stepDelay = (unsigned long)(axisY.stepDelay / ACCEL_FACTOR);
+          if (axisY.stepDelay > MAX_STEP_DELAY) {
+            axisY.stepDelay = MAX_STEP_DELAY;
+          }
+        }
         
         stepMotor('Y', direction);
         axisY.position += direction;
@@ -384,7 +390,8 @@ void updateMotion() {
     }
   } else {
     axisY.moving = false;
-    axisY.stepDelay = MAX_STEP_DELAY;
+    //axisY.stepDelay = MAX_STEP_DELAY;  
+    digitalWrite(ENA_Y, HIGH);  // Désactiver moteur
   }
 }
 
@@ -392,16 +399,20 @@ void updateMotion() {
 void stepMotor(char axis, int direction) {
   if (axis == 'X') {
     digitalWrite(DIR_X, direction > 0 ? HIGH : LOW);
-    delayMicroseconds(PULSE_WIDTH); // Délai après changement de direction
+    // delayMicroseconds(PULSE_WIDTH); // Délai après changement de direction
     digitalWrite(PUL_X, HIGH);
     delayMicroseconds(PULSE_WIDTH);
     digitalWrite(PUL_X, LOW);
-  } else {
+    delayMicroseconds(PULSE_WIDTH);
+  } 
+
+  if (axis == 'Y') {
     digitalWrite(DIR_Y, direction > 0 ? HIGH : LOW);
-    delayMicroseconds(PULSE_WIDTH); // Délai après changement de direction
+    // delayMicroseconds(PULSE_WIDTH); // Délai après changement de direction
     digitalWrite(PUL_Y, HIGH);
     delayMicroseconds(PULSE_WIDTH);
     digitalWrite(PUL_Y, LOW);
+    delayMicroseconds(PULSE_WIDTH);
   }
 }
 
